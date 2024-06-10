@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Guess The Cricketer</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin-top: 50px;
+        }
+        #quizContainer {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        img {
+            max-width: 300px;
+            margin-bottom: 20px;
+        }
+        .quiz-options {
+            list-style-type: none;
+            padding: 0;
+        }
+        .quiz-options li {
+            margin-bottom: 10px;
+            cursor: pointer;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            width: 200px;
+            text-align: center;
+            transition: background-color 0.3s ease;
+        }
+        .quiz-options li:hover:not(.disabled) {
+            background-color: #d4edda; /* Light green on hover */
+        }
+        .correct {
+            background-color: #28a745; /* Bright green */
+            border-color: #28a745;
+            color: white;
+        }
+        .wrong {
+            background-color: #dc3545; /* Red */
+            border-color: #dc3545;
+            color: white;
+        }
+        .disabled {
+            cursor: not-allowed;
+        }
+        #scoreContainer {
+            display: flex;
+            justify-content: center;
+            width: 100%;
+            margin-top: 20px;
+        }
+        #score {
+            font-size: 24px;
+            font-weight: bold;
+        }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.4.0/dist/confetti.browser.min.js"></script>
+</head>
+<body>
+    <div id="quizContainer">
+        <h1>Guess The Cricketer</h1>
+        <img id="quizImage" src="" alt="Quiz Image">
+        <ul class="quiz-options" id="quizOptions">
+            <!-- Options will be inserted here dynamically -->
+        </ul>
+    </div>
+    <div id="scoreContainer">
+        <div id="score">Score: 0/0</div>
+    </div>
+
+    <script>
+        let correctAnswers = 0;
+        let totalQuestions = 0;
+        const maxQuestions = 10;
+
+        function shuffleArray(array) {
+            for (let i = array.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [array[i], array[j]] = [array[j], array[i]];
+            }
+        }
+
+        function updateScore() {
+            const scoreElement = document.getElementById('score');
+            scoreElement.textContent = `Score: ${correctAnswers}/${totalQuestions}`;
+        }
+
+        function disableOptions() {
+            document.querySelectorAll('.quiz-options li').forEach(option => {
+                option.onclick = null;
+                option.classList.add('disabled');
+            });
+        }
+
+        function formatCategoryName(category) {
+            return category.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
+        }
+
+        function showConfetti() {
+            const duration = 5 * 1000; // 5 seconds
+            const animationEnd = Date.now() + duration;
+            const defaults = { startVelocity: 30, spread: 360, ticks: 60, zIndex: 0 };
+
+            function randomInRange(min, max) {
+                return Math.random() * (max - min) + min;
+            }
+
+            const interval = setInterval(() => {
+                const timeLeft = animationEnd - Date.now();
+
+                if (timeLeft <= 0) {
+                    return clearInterval(interval);
+                }
+
+                const particleCount = 50 * (timeLeft / duration);
+                confetti(Object.assign({}, defaults, { particleCount, origin: { x: randomInRange(0.1, 0.3), y: Math.random() - 0.2 } }));
+                confetti(Object.assign({}, defaults, { particleCount, origin: { x: randomInRange(0.7, 0.9), y: Math.random() - 0.2 } }));
+            }, 250);
+        }
+
+        async function loadQuiz() {
+            if (totalQuestions >= maxQuestions) {
+                if (correctAnswers > 5) {
+                    showConfetti();
+                }
+
+                setTimeout(() => {
+                    if (confirm("You have completed the quiz. Do you want to replay?")) {
+                        correctAnswers = 0;
+                        totalQuestions = 0;
+                        updateScore();
+                        loadQuiz();
+                    }
+                }, 1000);
+                return;
+            }
+
+            try {
+                const response = await fetch('/random_image');
+                const data = await response.json();
+                const { category, image } = data;
+
+                console.log('Random category:', category);
+                console.log('Random image path:', image);
+
+                const imgElement = document.getElementById('quizImage');
+                imgElement.src = `/categories/${image}`;
+
+                const optionsResponse = await fetch('/categories');
+                let categories = await optionsResponse.json();
+
+                // Ensure the correct category is in the options
+                if (!categories.includes(category)) {
+                    categories.push(category);
+                }
+
+                // Shuffle and select 4 options
+                shuffleArray(categories);
+                categories = categories.slice(0, 4);
+
+                // If the correct category is not in the selected 4, replace one option with the correct one
+                if (!categories.includes(category)) {
+                    categories[Math.floor(Math.random() * 4)] = category;
+                }
+
+                const optionsList = document.getElementById('quizOptions');
+                optionsList.innerHTML = '';
+                categories.forEach(categoryName => {
+                    const li = document.createElement('li');
+                    li.textContent = formatCategoryName(categoryName);
+                    li.onclick = () => {
+                        totalQuestions++;
+                        if (categoryName === category) {
+                            li.classList.add('correct');
+                            correctAnswers++;
+                        } else {
+                            li.classList.add('wrong');
+                            document.querySelectorAll('.quiz-options li').forEach(option => {
+                                if (option.textContent === formatCategoryName(category)) {
+                                    option.classList.add('correct');
+                                }
+                            });
+                        }
+                        updateScore();
+                        disableOptions();
+                        setTimeout(loadQuiz, 1000); // Load the next question after 1 second
+                    };
+                    optionsList.appendChild(li);
+                });
+            } catch (error) {
+                console.error('Error loading quiz:', error);
+            }
+        }
+
+        window.onload = loadQuiz;
+    </script>
+</body>
+</html>
